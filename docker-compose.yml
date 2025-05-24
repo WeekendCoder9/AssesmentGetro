@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  tracking-number-api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+    depends_on:
+      - redis
+      - zipkin
+    networks:
+      - tracking-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - tracking-network
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  zipkin:
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
+    networks:
+      - tracking-network
+    environment:
+      - STORAGE_TYPE=mem
+
+networks:
+  tracking-network:
+    driver: bridge
+
+volumes:
+  redis_data:
