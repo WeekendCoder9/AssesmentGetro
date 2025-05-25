@@ -44,7 +44,6 @@ public class DefaultTrackingNumberGenerator implements TrackingNumberGenerator {
                 request.originCountryId(),
                 request.destinationCountryId(),
                 request.weight(),
-                request.createdAt(),
                 request.customerId(),
                 request.customerName(),
                 request.customerSlug() != null ? request.customerSlug() : "",
