@@ -27,7 +27,7 @@ class TrackingNumberControllerTest {
     void shouldGenerateTrackingNumber() {
         String expectedTrackingNumber = "ABC123DEF4";
         TrackingNumberRequest request = new TrackingNumberRequest(
-            "US", "CA", "1.234", "2018-11-20T19:29:32+08:00",
+            "US", "CA", "1.234", "2025-05-24T00:00:00Z",
             "de619854-b59b-425e-9db4-943379e1bd49", "RedBox Logistics", "redbox-logistics"
         );
         
@@ -48,7 +48,7 @@ class TrackingNumberControllerTest {
     @Test
     void shouldReturnBadRequestForInvalidRequest() {
         TrackingNumberRequest invalidRequest = new TrackingNumberRequest(
-            "", "CA", "1.234", "2018-11-20T19:29:32+08:00",
+            "", "CA", "1.234", "2025-05-24T00:00:00Z",
             "de619854-b59b-425e-9db4-943379e1bd49", "RedBox Logistics", "redbox-logistics"
         );
         
@@ -66,7 +66,7 @@ class TrackingNumberControllerTest {
     @Test
     void shouldHandleServiceError() {
         TrackingNumberRequest request = new TrackingNumberRequest(
-            "US", "CA", "1.234", "2018-11-20T19:29:32+08:00",
+            "US", "CA", "1.234", "2025-05-24T00:00:00Z",
             "de619854-b59b-425e-9db4-943379e1bd49", "RedBox Logistics", "redbox-logistics"
         );
         
