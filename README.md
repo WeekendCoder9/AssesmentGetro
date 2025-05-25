@@ -25,7 +25,7 @@ A production-ready, scalable REST API for generating unique tracking numbers bui
   "origin_country_id": "US",
   "destination_country_id": "CA", 
   "weight": "1.234",
-  "created_at": "2018-11-20T19:29:32+08:00",
+  "created_at": "2025-05-24T19:29:32+08:00",
   "customer_id": "de619854-b59b-425e-9db4-943379e1bd49",
   "customer_name": "RedBox Logistics",
   "customer_slug": "redbox-logistics"
@@ -36,7 +36,7 @@ A production-ready, scalable REST API for generating unique tracking numbers bui
 ```json
 {
   "tracking_number": "ABC123DEF4",
-  "created_at": "2023-12-01T10:30:00Z"
+  "created_at": "2025-05-24T19:29:32+08:00"
 }
 ```
 
@@ -68,7 +68,7 @@ A production-ready, scalable REST API for generating unique tracking numbers bui
      "origin_country_id": "US",
      "destination_country_id": "CA",
      "weight": "1.234", 
-     "created_at": "2018-11-20T19:29:32+08:00",
+     "created_at": "2025-05-24T19:29:32+08:00",
      "customer_id": "de619854-b59b-425e-9db4-943379e1bd49",
      "customer_name": "RedBox Logistics",
      "customer_slug": "redbox-logistics"
@@ -163,7 +163,7 @@ The API provides comprehensive error handling:
 Example error response:
 ```json
 {
-  "timestamp": "2023-12-01T10:30:00Z",
+  "timestamp": "2025-05-24T19:29:32+08:00",
   "status": 400,
   "error": "Validation failed",
   "details": {
