@@ -7,7 +7,8 @@ import org.springframework.stereotype.Component;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.regex.Pattern;
 
 @Component
@@ -15,6 +16,7 @@ public class DefaultTrackingNumberGenerator implements TrackingNumberGenerator {
 
     private static final Logger logger = LoggerFactory.getLogger(DefaultTrackingNumberGenerator.class);
     private static final Pattern TRACKING_NUMBER_PATTERN = Pattern.compile("^[A-Z0-9]{1,16}$");
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     @Override
     public String generate(TrackingNumberRequest request, int attempt) {
@@ -40,14 +42,17 @@ public class DefaultTrackingNumberGenerator implements TrackingNumberGenerator {
     }
 
     private String buildInputString(TrackingNumberRequest request, int attempt) {
-        return String.format("%s_%s_%s_%s_%s_%s_%s_%d_%d",
+        // Use current date instead of timestamp for better date-based generation
+        String currentDate = LocalDate.now().format(DATE_FORMATTER);
+        
+        return String.format("%s_%s_%s_%s_%s_%s_%s_%d",
                 request.originCountryId(),
                 request.destinationCountryId(),
                 request.weight(),
                 request.customerId(),
                 request.customerName(),
                 request.customerSlug() != null ? request.customerSlug() : "",
-                Instant.now().toEpochMilli(),
+                currentDate,
                 attempt
         );
     }
@@ -77,8 +82,13 @@ public class DefaultTrackingNumberGenerator implements TrackingNumberGenerator {
             if (Character.isDigit(c) || (c >= 'A' && c <= 'Z')) {
                 result.append(c);
             } else {
-                // Convert to valid character
-                result.append((char) ('A' + (c % 26)));
+                // Convert hex characters (A-F are already valid, but handle others)
+                if (c >= 'a' && c <= 'f') {
+                    result.append(Character.toUpperCase(c));
+                } else {
+                    // Convert to valid character using modulo
+                    result.append((char) ('A' + (c % 26)));
+                }
             }
         }
 
