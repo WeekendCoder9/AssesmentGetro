@@ -17,10 +17,6 @@ public record TrackingNumberRequest(
     @Pattern(regexp = "^\\d{1,3}\\.\\d{3}$", message = "Weight must be in format X.XXX (up to 3 decimal places)")
     String weight,
     
-    @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}:\\d{2}\\+\\d{2}:\\d{2}$", 
-             message = "Created at must be in RFC 3339 format")
-    String createdAt,
-    
     @NotBlank(message = "Customer ID is required")
     @Size(max = 36, message = "Customer ID must not exceed 36 characters")
     String customerId,
