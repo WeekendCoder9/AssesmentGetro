@@ -33,7 +33,7 @@ class TrackingNumberServiceImplTest {
     void setUp() {
         service = new TrackingNumberServiceImpl(repository, generator, 10, 86400);
         validRequest = new TrackingNumberRequest(
-            "US", "CA", "1.234", "2018-11-20T19:29:32+08:00",
+            "US", "CA", "1.234",
             "de619854-b59b-425e-9db4-943379e1bd49", "RedBox Logistics", "redbox-logistics"
         );
     }
@@ -47,7 +47,7 @@ class TrackingNumberServiceImplTest {
         when(repository.existsById(expectedTrackingNumber))
             .thenReturn(Mono.just(false));
         when(repository.save(any(TrackingNumberEntity.class)))
-            .thenReturn(Mono.just(new TrackingNumberEntity(expectedTrackingNumber, "2025-05-24T00:00:00Z", 86400)));
+            .thenReturn(Mono.just(new TrackingNumberEntity(expectedTrackingNumber, 86400)));
         
         StepVerifier.create(service.generateUniqueTrackingNumber(validRequest))
             .expectNext(expectedTrackingNumber)
@@ -73,7 +73,7 @@ class TrackingNumberServiceImplTest {
         when(repository.existsById(uniqueNumber))
             .thenReturn(Mono.just(false));
         when(repository.save(any(TrackingNumberEntity.class)))
-            .thenReturn(Mono.just(new TrackingNumberEntity(uniqueNumber, "2025-05-24T00:00:00Z", 86400)));
+            .thenReturn(Mono.just(new TrackingNumberEntity(uniqueNumber,86400)));
         
         StepVerifier.create(service.generateUniqueTrackingNumber(validRequest))
             .expectNext(uniqueNumber)
