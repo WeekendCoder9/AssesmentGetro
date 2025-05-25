@@ -62,21 +62,35 @@ public class TrackingNumberServiceImpl implements TrackingNumberService {
         logger.debug("Tracking number generation attempt {} for customer: {}",
                 attempt + 1, request.customerId());
 
-        String candidateNumber = generator.generate(request, attempt);
+        String candidateNumber;
+        try {
+            candidateNumber = generator.generate(request, attempt);
+        } catch (Exception e) {
+            logger.error("Error generating tracking number candidate on attempt {}: {}", attempt + 1, e.getMessage());
+            return Mono.error(new TrackingNumberException("Failed to generate tracking number", e));
+        }
 
         return checkAndStoreTrackingNumber(candidateNumber)
                 .then(Mono.just(candidateNumber))
                 .onErrorResume(DuplicateTrackingNumberException.class,
                         ex -> {
-                            logger.warn("Duplicate tracking number detected: {}, retrying...", candidateNumber);
+                            logger.warn("Duplicate tracking number detected: {}, retrying (attempt {}/{})", 
+                                      candidateNumber, attempt + 1, maxRetries);
                             return generateWithRetry(request, attempt + 1);
                         })
                 .retryWhen(Retry.backoff(3, Duration.ofMillis(100))
-                        .filter(throwable -> !(throwable instanceof DuplicateTrackingNumberException)));
+                        .filter(throwable -> !(throwable instanceof DuplicateTrackingNumberException))
+                        .filter(throwable -> !(throwable instanceof TrackingNumberException))
+                        .doBeforeRetry(retrySignal -> 
+                                logger.debug("Retrying due to transient error: {}", retrySignal.failure().getMessage())));
     }
 
     private Mono<Void> checkAndStoreTrackingNumber(String trackingNumber) {
         logger.debug("Checking uniqueness and storing tracking number: {}", trackingNumber);
+
+        if (trackingNumber == null || trackingNumber.trim().isEmpty()) {
+            return Mono.error(new TrackingNumberException("Generated tracking number is null or empty"));
+        }
 
         TrackingNumberEntity entity = new TrackingNumberEntity(
                 trackingNumber,
@@ -90,11 +104,17 @@ public class TrackingNumberServiceImpl implements TrackingNumberService {
                         logger.debug("Tracking number already exists: {}", trackingNumber);
                         return Mono.error(new DuplicateTrackingNumberException(trackingNumber));
                     }
-                    return repository.save(entity).then();
+                    return repository.save(entity)
+                            .doOnSuccess(savedEntity -> 
+                                    logger.debug("Successfully stored tracking number: {}", trackingNumber))
+                            .then();
                 })
-                .doOnSuccess(unused ->
-                        logger.debug("Successfully stored tracking number: {}", trackingNumber))
-                .doOnError(error ->
-                        logger.error("Error storing tracking number: {}", trackingNumber, error));
+                .onErrorMap(throwable -> {
+                    if (throwable instanceof DuplicateTrackingNumberException) {
+                        return throwable; // Don't wrap our custom exceptions
+                    }
+                    logger.error("Error storing tracking number: {}", trackingNumber, throwable);
+                    return new TrackingNumberException("Failed to store tracking number: " + trackingNumber, throwable);
+                });
     }
 }
