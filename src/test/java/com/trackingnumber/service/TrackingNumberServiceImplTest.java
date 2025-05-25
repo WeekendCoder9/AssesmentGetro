@@ -13,6 +13,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.time.Instant;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -47,7 +49,11 @@ class TrackingNumberServiceImplTest {
         when(repository.existsById(expectedTrackingNumber))
             .thenReturn(Mono.just(false));
         when(repository.save(any(TrackingNumberEntity.class)))
-            .thenReturn(Mono.just(new TrackingNumberEntity(expectedTrackingNumber, 86400)));
+            .thenReturn(Mono.just(new TrackingNumberEntity(
+                expectedTrackingNumber, 
+                Instant.now().toString(), 
+                86400L
+            )));
         
         StepVerifier.create(service.generateUniqueTrackingNumber(validRequest))
             .expectNext(expectedTrackingNumber)
@@ -73,7 +79,11 @@ class TrackingNumberServiceImplTest {
         when(repository.existsById(uniqueNumber))
             .thenReturn(Mono.just(false));
         when(repository.save(any(TrackingNumberEntity.class)))
-            .thenReturn(Mono.just(new TrackingNumberEntity(uniqueNumber,86400)));
+            .thenReturn(Mono.just(new TrackingNumberEntity(
+                uniqueNumber, 
+                Instant.now().toString(), 
+                86400L
+            )));
         
         StepVerifier.create(service.generateUniqueTrackingNumber(validRequest))
             .expectNext(uniqueNumber)
@@ -109,6 +119,34 @@ class TrackingNumberServiceImplTest {
             .thenReturn(trackingNumber);
         when(repository.existsById(trackingNumber))
             .thenReturn(Mono.error(new RuntimeException("Redis connection failed")));
+        
+        StepVerifier.create(service.generateUniqueTrackingNumber(validRequest))
+            .expectError(RuntimeException.class)
+            .verify();
+    }
+    
+    @Test
+    void shouldHandleGeneratorError() {
+        when(generator.generate(any(TrackingNumberRequest.class), anyInt()))
+            .thenThrow(new RuntimeException("Hash generation failed"));
+        
+        StepVerifier.create(service.generateUniqueTrackingNumber(validRequest))
+            .expectError(RuntimeException.class)
+            .verify();
+        
+        verify(generator).generate(validRequest, 0);
+    }
+    
+    @Test
+    void shouldHandleSaveError() {
+        String trackingNumber = "ABC123DEF4";
+        
+        when(generator.generate(any(TrackingNumberRequest.class), anyInt()))
+            .thenReturn(trackingNumber);
+        when(repository.existsById(trackingNumber))
+            .thenReturn(Mono.just(false));
+        when(repository.save(any(TrackingNumberEntity.class)))
+            .thenReturn(Mono.error(new RuntimeException("Save failed")));
         
         StepVerifier.create(service.generateUniqueTrackingNumber(validRequest))
             .expectError(RuntimeException.class)
