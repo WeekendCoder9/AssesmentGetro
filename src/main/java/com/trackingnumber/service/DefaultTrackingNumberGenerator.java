@@ -7,8 +7,9 @@ import org.springframework.stereotype.Component;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
+import java.security.SecureRandom;
+import java.time.Instant;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Pattern;
 
 @Component
@@ -16,10 +17,10 @@ public class DefaultTrackingNumberGenerator implements TrackingNumberGenerator {
 
     private static final Logger logger = LoggerFactory.getLogger(DefaultTrackingNumberGenerator.class);
     private static final Pattern TRACKING_NUMBER_PATTERN = Pattern.compile("^[A-Z0-9]{1,16}$");
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final int MIN_LENGTH = 1;
     private static final int MAX_LENGTH = 16;
     private static final int DEFAULT_LENGTH = 10;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     @Override
     public String generate(TrackingNumberRequest request, int attempt) {
@@ -49,22 +50,31 @@ public class DefaultTrackingNumberGenerator implements TrackingNumberGenerator {
     }
 
     private String buildInputString(TrackingNumberRequest request, int attempt) {
-        // Use current date for better date-based generation
-        String currentDate = LocalDate.now().format(DATE_FORMATTER);
-        
-        // Add some entropy with system nanotime to reduce collisions
+        // Enhanced entropy sources
         long nanoTime = System.nanoTime();
+        long currentTimeMillis = System.currentTimeMillis();
+        int randomInt = ThreadLocalRandom.current().nextInt();
+        byte[] randomBytes = new byte[8];
+        SECURE_RANDOM.nextBytes(randomBytes);
         
-        return String.format("%s_%s_%s_%s_%s_%s_%s_%d_%d",
+        // Convert random bytes to hex string
+        StringBuilder randomHex = new StringBuilder();
+        for (byte b : randomBytes) {
+            randomHex.append(String.format("%02x", b));
+        }
+        
+        return String.format("%s|%s|%s|%s|%s|%s|%d|%d|%d|%d|%s",
                 request.originCountryId(),
                 request.destinationCountryId(),
                 request.weight(),
                 request.customerId(),
                 request.customerName(),
                 request.customerSlug() != null ? request.customerSlug() : "",
-                currentDate,
                 attempt,
-                nanoTime % 10000 // Use last 4 digits for additional entropy
+                nanoTime,
+                currentTimeMillis,
+                randomInt,
+                randomHex.toString()
         );
     }
 
@@ -88,39 +98,52 @@ public class DefaultTrackingNumberGenerator implements TrackingNumberGenerator {
             throw new IllegalArgumentException("Hash cannot be null or empty");
         }
 
-        // Take first DEFAULT_LENGTH characters and ensure it matches pattern requirements
-        int lengthToTake = Math.min(DEFAULT_LENGTH, hash.length());
-        String candidate = hash.substring(0, lengthToTake);
-
-        // Convert to valid alphanumeric characters
         StringBuilder result = new StringBuilder();
-        for (char c : candidate.toCharArray()) {
-            if (Character.isDigit(c) || (c >= 'A' && c <= 'Z')) {
+        int hashIndex = 0;
+        
+        // Use a more sophisticated approach to convert hash to alphanumeric
+        while (result.length() < DEFAULT_LENGTH && hashIndex < hash.length()) {
+            char c = hash.charAt(hashIndex);
+            
+            if (Character.isDigit(c)) {
                 result.append(c);
-            } else if (c >= 'a' && c <= 'z') {
-                // Convert lowercase to uppercase
-                result.append(Character.toUpperCase(c));
+            } else if (c >= 'A' && c <= 'F') {
+                // Convert hex letters to valid letters (A-F maps to A-F, then continue with G-Z)
+                if (c <= 'F') {
+                    result.append(c);
+                }
             } else {
-                // Convert any other character to valid character using modulo
-                int charCode = (int) c;
-                if (charCode % 2 == 0) {
-                    result.append((char) ('A' + (charCode % 26)));
+                // For any other character, use modulo to get valid character
+                int charValue = (int) c;
+                if (charValue % 2 == 0) {
+                    result.append((char) ('A' + (charValue % 26)));
                 } else {
-                    result.append((char) ('0' + (charCode % 10)));
+                    result.append((char) ('0' + (charValue % 10)));
                 }
             }
+            hashIndex++;
         }
 
-        String trackingNumber = result.toString();
-        
-        // Ensure minimum length
-        while (trackingNumber.length() < MIN_LENGTH) {
-            trackingNumber += "A";
+        // If we still need more characters, use additional entropy
+        while (result.length() < DEFAULT_LENGTH) {
+            int randomChoice = SECURE_RANDOM.nextInt(36); // 0-35
+            if (randomChoice < 10) {
+                result.append((char) ('0' + randomChoice));
+            } else {
+                result.append((char) ('A' + (randomChoice - 10)));
+            }
         }
         
-        // Ensure maximum length
+        String trackingNumber = result.toString();
+        
+        // Ensure length constraints
         if (trackingNumber.length() > MAX_LENGTH) {
             trackingNumber = trackingNumber.substring(0, MAX_LENGTH);
+        }
+        
+        // Ensure minimum length (should not happen with current logic, but safety check)
+        while (trackingNumber.length() < MIN_LENGTH) {
+            trackingNumber += "A";
         }
 
         return trackingNumber;
