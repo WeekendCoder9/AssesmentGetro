@@ -9,6 +9,7 @@ import io.micrometer.tracing.annotation.NewSpan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
@@ -23,16 +24,19 @@ public class TrackingNumberServiceImpl implements TrackingNumberService {
 
     private final TrackingNumberRepository repository;
     private final TrackingNumberGenerator generator;
+    private final ReactiveRedisTemplate<String, String> redisTemplate;
     private final int maxRetries;
     private final long ttlSeconds;
 
     public TrackingNumberServiceImpl(
             TrackingNumberRepository repository,
             TrackingNumberGenerator generator,
+            ReactiveRedisTemplate<String, String> redisTemplate,
             @Value("${tracking-number.max-retries:10}") int maxRetries,
             @Value("${tracking-number.ttl-seconds:86400}") long ttlSeconds) {
         this.repository = repository;
         this.generator = generator;
+        this.redisTemplate = redisTemplate;
         this.maxRetries = maxRetries;
         this.ttlSeconds = ttlSeconds;
     }
@@ -40,6 +44,10 @@ public class TrackingNumberServiceImpl implements TrackingNumberService {
     @Override
     @NewSpan("generate-unique-tracking-number")
     public Mono<String> generateUniqueTrackingNumber(TrackingNumberRequest request) {
+        if (request == null) {
+            return Mono.error(new TrackingNumberException("TrackingNumberRequest cannot be null"));
+        }
+
         logger.info("Starting tracking number generation for customer: {}", request.customerId());
 
         return generateWithRetry(request, 0)
@@ -65,12 +73,15 @@ public class TrackingNumberServiceImpl implements TrackingNumberService {
         String candidateNumber;
         try {
             candidateNumber = generator.generate(request, attempt);
+            if (candidateNumber == null || candidateNumber.trim().isEmpty()) {
+                throw new TrackingNumberException("Generated tracking number is null or empty");
+            }
         } catch (Exception e) {
             logger.error("Error generating tracking number candidate on attempt {}: {}", attempt + 1, e.getMessage());
             return Mono.error(new TrackingNumberException("Failed to generate tracking number", e));
         }
 
-        return checkAndStoreTrackingNumber(candidateNumber)
+        return atomicCheckAndStore(candidateNumber)
                 .then(Mono.just(candidateNumber))
                 .onErrorResume(DuplicateTrackingNumberException.class,
                         ex -> {
@@ -85,36 +96,48 @@ public class TrackingNumberServiceImpl implements TrackingNumberService {
                                 logger.debug("Retrying due to transient error: {}", retrySignal.failure().getMessage())));
     }
 
-    private Mono<Void> checkAndStoreTrackingNumber(String trackingNumber) {
-        logger.debug("Checking uniqueness and storing tracking number: {}", trackingNumber);
+    private Mono<Void> atomicCheckAndStore(String trackingNumber) {
+        logger.debug("Atomically checking and storing tracking number: {}", trackingNumber);
 
-        if (trackingNumber == null || trackingNumber.trim().isEmpty()) {
-            return Mono.error(new TrackingNumberException("Generated tracking number is null or empty"));
-        }
-
-        TrackingNumberEntity entity = new TrackingNumberEntity(
-                trackingNumber,
-                Instant.now().toString(),
-                ttlSeconds
-        );
-
-        return repository.existsById(trackingNumber)
-                .flatMap(exists -> {
-                    if (exists) {
+        // Use Redis SETNX (SET if Not eXists) for atomic check-and-set
+        String redisKey = "tracking_number:" + trackingNumber;
+        String timestamp = Instant.now().toString();
+        
+        return redisTemplate.opsForValue()
+                .setIfAbsent(redisKey, timestamp)
+                .flatMap(wasSet -> {
+                    if (!wasSet) {
                         logger.debug("Tracking number already exists: {}", trackingNumber);
                         return Mono.error(new DuplicateTrackingNumberException(trackingNumber));
                     }
-                    return repository.save(entity)
-                            .doOnSuccess(savedEntity -> 
-                                    logger.debug("Successfully stored tracking number: {}", trackingNumber))
-                            .then();
+                    
+                    // Set TTL for the Redis key
+                    return redisTemplate.expire(redisKey, Duration.ofSeconds(ttlSeconds))
+                            .then(saveToRepository(trackingNumber, timestamp));
                 })
                 .onErrorMap(throwable -> {
                     if (throwable instanceof DuplicateTrackingNumberException) {
-                        return throwable; // Don't wrap our custom exceptions
+                        return throwable;
                     }
-                    logger.error("Error storing tracking number: {}", trackingNumber, throwable);
+                    logger.error("Error in atomic check-and-store for tracking number: {}", trackingNumber, throwable);
                     return new TrackingNumberException("Failed to store tracking number: " + trackingNumber, throwable);
+                });
+    }
+
+    private Mono<Void> saveToRepository(String trackingNumber, String timestamp) {
+        TrackingNumberEntity entity = new TrackingNumberEntity(
+                trackingNumber,
+                timestamp,
+                ttlSeconds
+        );
+
+        return repository.save(entity)
+                .doOnSuccess(savedEntity -> 
+                        logger.debug("Successfully stored tracking number in repository: {}", trackingNumber))
+                .then()
+                .onErrorMap(throwable -> {
+                    logger.error("Error saving to repository for tracking number: {}", trackingNumber, throwable);
+                    return new TrackingNumberException("Failed to save tracking number to repository: " + trackingNumber, throwable);
                 });
     }
 }
