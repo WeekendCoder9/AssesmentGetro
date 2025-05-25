@@ -47,7 +47,7 @@ class TrackingNumberServiceImplTest {
         when(repository.existsById(expectedTrackingNumber))
             .thenReturn(Mono.just(false));
         when(repository.save(any(TrackingNumberEntity.class)))
-            .thenReturn(Mono.just(new TrackingNumberEntity(expectedTrackingNumber, "2023-01-01T00:00:00Z", 86400)));
+            .thenReturn(Mono.just(new TrackingNumberEntity(expectedTrackingNumber, "2025-05-24T00:00:00Z", 86400)));
         
         StepVerifier.create(service.generateUniqueTrackingNumber(validRequest))
             .expectNext(expectedTrackingNumber)
@@ -73,7 +73,7 @@ class TrackingNumberServiceImplTest {
         when(repository.existsById(uniqueNumber))
             .thenReturn(Mono.just(false));
         when(repository.save(any(TrackingNumberEntity.class)))
-            .thenReturn(Mono.just(new TrackingNumberEntity(uniqueNumber, "2023-01-01T00:00:00Z", 86400)));
+            .thenReturn(Mono.just(new TrackingNumberEntity(uniqueNumber, "2025-05-24T00:00:00Z", 86400)));
         
         StepVerifier.create(service.generateUniqueTrackingNumber(validRequest))
             .expectNext(uniqueNumber)
