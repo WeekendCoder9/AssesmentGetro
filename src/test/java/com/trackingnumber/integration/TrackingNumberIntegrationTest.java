@@ -1,5 +1,7 @@
 package com.trackingnumber.integration;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.redis.testcontainers.RedisContainer;
 import com.trackingnumber.domain.TrackingNumberRequest;
 import org.junit.jupiter.api.Test;
@@ -13,6 +15,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 class TrackingNumberIntegrationTest {
@@ -24,6 +28,8 @@ class TrackingNumberIntegrationTest {
     @Autowired
     private WebTestClient webTestClient;
     
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.data.redis.host", redis::getHost);
@@ -31,14 +37,14 @@ class TrackingNumberIntegrationTest {
     }
     
     @Test
-    void shouldGenerateUniqueTrackingNumbers() {
+    void shouldGenerateUniqueTrackingNumbers() throws Exception {
         TrackingNumberRequest request = new TrackingNumberRequest(
             "US", "CA", "1.234",
             "de619854-b59b-425e-9db4-943379e1bd49", "RedBox Logistics", "redbox-logistics"
         );
         
         // Generate first tracking number
-        String firstTrackingNumber = webTestClient.post()
+        byte[] firstResponse = webTestClient.post()
             .uri("/api/v1/next-tracking-number")
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
@@ -51,7 +57,7 @@ class TrackingNumberIntegrationTest {
             .getResponseBody();
         
         // Generate second tracking number
-        String secondTrackingNumber = webTestClient.post()
+        byte[] secondResponse = webTestClient.post()
             .uri("/api/v1/next-tracking-number")
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(request)
@@ -63,10 +69,19 @@ class TrackingNumberIntegrationTest {
             .returnResult()
             .getResponseBody();
         
-        // Verify they are different (this is probabilistic but very likely)
-        // In a real scenario, you might want to extract and compare the actual values
-        assert firstTrackingNumber != null;
-        assert secondTrackingNumber != null;
+        // Parse responses and compare tracking numbers
+        JsonNode firstJson = objectMapper.readTree(firstResponse);
+        JsonNode secondJson = objectMapper.readTree(secondResponse);
+        
+        String firstTrackingNumber = firstJson.get("tracking_number").asText();
+        String secondTrackingNumber = secondJson.get("tracking_number").asText();
+        
+        // Verify they are different
+        assertNotEquals(firstTrackingNumber, secondTrackingNumber);
+        assertNotNull(firstTrackingNumber);
+        assertNotNull(secondTrackingNumber);
+        assertTrue(firstTrackingNumber.matches("^[A-Z0-9]{1,16}$"));
+        assertTrue(secondTrackingNumber.matches("^[A-Z0-9]{1,16}$"));
     }
     
     @Test
@@ -75,10 +90,9 @@ class TrackingNumberIntegrationTest {
             "USA", // Invalid - should be 2 characters
             "C",   // Invalid - should be 2 characters  
             "invalid_weight", // Invalid format
-            "invalid_date",   // Invalid date format
-            "",    // Invalid - required field
-            "",    // Invalid - required field
-            null   // Valid - optional field
+            "de619854-b59b-425e-9db4-943379e1bd49",
+            "",    // Invalid - required field (customer name)
+            "valid-slug"
         );
         
         webTestClient.post()
@@ -89,6 +103,43 @@ class TrackingNumberIntegrationTest {
             .expectStatus().isBadRequest()
             .expectBody()
             .jsonPath("$.error").isEqualTo("Validation failed")
+            .jsonPath("$.details").exists()
+            .jsonPath("$.details.originCountryId").exists()
+            .jsonPath("$.details.destinationCountryId").exists()
+            .jsonPath("$.details.weight").exists()
+            .jsonPath("$.details.customerName").exists();
+    }
+    
+    @Test
+    void shouldHandleEmptyRequestBody() {
+        webTestClient.post()
+            .uri("/api/v1/next-tracking-number")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue("{}")
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.error").isEqualTo("Validation failed")
             .jsonPath("$.details").exists();
+    }
+    
+    @Test
+    void shouldAcceptValidRequest() {
+        TrackingNumberRequest validRequest = new TrackingNumberRequest(
+            "US", "CA", "1.234",
+            "de619854-b59b-425e-9db4-943379e1bd49", 
+            "RedBox Logistics", 
+            "redbox-logistics"
+        );
+        
+        webTestClient.post()
+            .uri("/api/v1/next-tracking-number")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(validRequest)
+            .exchange()
+            .expectStatus().isCreated()
+            .expectBody()
+            .jsonPath("$.tracking_number").exists()
+            .jsonPath("$.created_at").exists();
     }
 }
