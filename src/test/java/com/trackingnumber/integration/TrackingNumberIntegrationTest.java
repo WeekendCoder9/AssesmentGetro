@@ -33,7 +33,7 @@ class TrackingNumberIntegrationTest {
     @Test
     void shouldGenerateUniqueTrackingNumbers() {
         TrackingNumberRequest request = new TrackingNumberRequest(
-            "US", "CA", "1.234", "2018-11-20T19:29:32+08:00",
+            "US", "CA", "1.234",
             "de619854-b59b-425e-9db4-943379e1bd49", "RedBox Logistics", "redbox-logistics"
         );
         
